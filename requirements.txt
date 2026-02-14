@@ -1,0 +1,12 @@
+streamlit
+pandas
+plotly
+scipy
+statsmodels
+pingouin
+qrcode
+pillow
+fpdf
+openpyxl
+xlsxwriter
+st-gsheets-connection
