@@ -8,44 +8,53 @@ from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 # --- KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="Sistem Analisis KIAS", layout="wide")
+st.set_page_config(page_title="Sistem Analisis Data KIAS", layout="wide", page_icon="📊")
 
-# --- CSS KHAS (TULISAN HITAM UNTUK REPORT) ---
+# --- CSS KHAS (UNTUK PAPARAN LEBIH KEMAS & TULISAN HITAM) ---
 st.markdown("""
 <style>
+    /* Paksa tulisan laporan jadi hitam pekat */
     .report-view-text {
         color: black !important;
         font-family: 'Times New Roman', serif;
         background-color: white;
-        padding: 20px;
+        padding: 30px;
         border: 1px solid #ddd;
+        border-radius: 5px;
     }
     .report-view-text h1, .report-view-text h2, .report-view-text h3, 
     .report-view-text p, .report-view-text td, .report-view-text th, 
     .report-view-text li, .report-view-text span, .report-view-text div {
         color: black !important;
     }
-    /* Paksa table header jadi hitam */
+    
+    /* Table Header Styling */
     div[data-testid="stTable"] th {
+        background-color: #f0f2f6 !important;
         color: black !important; 
         font-weight: bold;
+    }
+    
+    /* Sidebar Styling */
+    section[data-testid="stSidebar"] {
+        background-color: #f8f9fa;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- INITIALIZATION (CLEAN SLATE) ---
+# --- INITIALIZATION (CLEAN SLATE - KOSONGKAN DATA) ---
 if 'df' not in st.session_state:
     st.session_state['df'] = None
 
 if 'report_structure' not in st.session_state:
-    # Mula dengan Bab 1 yang KOSONG
     st.session_state['report_structure'] = [
         {"title": "Bab 1: Demografi Responden", "items": []}
     ]
 
-# --- FUNGSI LOAD DATA (HEURISTIC) ---
+# --- UTILITY FUNCTIONS ---
+
 def detect_header_row(df_raw):
-    # Imbas 10 baris pertama, cari baris paling banyak data (bukan NaN)
+    """Mencari baris header sebenar berdasarkan baris yang paling banyak data."""
     max_non_na = 0
     header_idx = 0
     for i in range(min(10, len(df_raw))):
@@ -56,7 +65,8 @@ def detect_header_row(df_raw):
     return header_idx
 
 def clean_data(df):
-    # Buang kolum tanpa nama (Unnamed)
+    """Membersihkan data dari kolum kosong dan baris hantu."""
+    # Buang kolum 'Unnamed'
     df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
     # Buang baris yang kosong sepenuhnya
     df.dropna(how='all', inplace=True)
@@ -64,15 +74,13 @@ def clean_data(df):
     df.reset_index(drop=True, inplace=True)
     return df
 
-# --- FUNGSI ANALISIS TEKS (BAHASA MELAYU) ---
 def generate_analysis_text(col_name, counts, percents):
+    """Menjana ayat analisis dalam Bahasa Melayu Akademik secara automatik."""
     try:
-        # Cari Max
         max_idx = counts.idxmax()
         max_val = counts[max_idx]
         max_pct = percents[max_idx]
         
-        # Cari Min
         min_idx = counts.idxmin()
         min_val = counts[min_idx]
         min_pct = percents[min_idx]
@@ -86,126 +94,109 @@ def generate_analysis_text(col_name, counts, percents):
     except:
         return "Data tidak mencukupi untuk menjana analisis automatik."
 
-# --- KELAS PDF GENERATOR ---
-class PDFReport(FPDF):
-    def header(self):
-        self.set_font('Arial', 'B', 12)
-        self.cell(0, 10, 'Laporan Analisis Data KIAS', 0, 1, 'C')
-        self.ln(5)
-
-    def chapter_title(self, title):
-        self.set_font('Arial', 'B', 12)
-        self.set_fill_color(200, 220, 255)
-        self.cell(0, 6, title, 0, 1, 'L', 1)
-        self.ln(4)
-
-    def add_table(self, df, title):
-        self.set_font('Arial', 'B', 10)
-        self.cell(0, 6, title, 0, 1)
-        self.set_font('Arial', '', 10)
-        
-        # Header
-        cols = df.columns
-        col_width = 190 / len(cols)
-        for col in cols:
-            self.cell(col_width, 7, str(col), 1)
-        self.ln()
-        
-        # Rows
-        for _, row in df.iterrows():
-            for col in cols:
-                self.cell(col_width, 7, str(row[col]), 1)
-            self.ln()
-        self.ln(5)
-
-    def add_analysis_text(self, text):
-        self.set_font('Arial', '', 11)
-        self.multi_cell(0, 5, text.replace('**', '')) # Remove markdown bold for PDF
-        self.ln(5)
-
-# --- FUNGSI EXPORT WORD ---
+# --- FUNGSI EXPORT WORD (DOCX) ---
 def generate_word_doc(structure, df):
     doc = Document()
-    doc.add_heading('Laporan Analisis Data KIAS', 0)
+    style = doc.styles['Normal']
+    style.font.name = 'Times New Roman'
+    style.font.size = Pt(12)
+    
+    doc.add_heading('LAPORAN ANALISIS DATA', 0)
     
     for chapter in structure:
+        doc.add_page_break()
         doc.add_heading(chapter['title'], level=1)
         
         for item in chapter['items']:
             if item['type'] == 'single':
                 col = item['var']
                 if col in df.columns:
-                    # Data Processing
                     counts = df[col].value_counts()
                     percents = df[col].value_counts(normalize=True) * 100
                     
-                    # Table A (Counts)
+                    # Table A (Bilangan)
                     df_A = pd.DataFrame({'Kategori': counts.index, 'Bilangan': counts.values})
-                    total_count = df_A['Bilangan'].sum()
-                    df_A.loc[len(df_A)] = ['JUMLAH BESAR', total_count]
+                    df_A.loc[len(df_A)] = ['JUMLAH BESAR', df_A['Bilangan'].sum()]
                     
-                    # Table B (Percents)
+                    # Table B (Peratus)
                     df_B = pd.DataFrame({'Kategori': percents.index, 'Peratus (%)': percents.values.round(1)})
-                    total_pct = df_B['Peratus (%)'].sum()
-                    df_B.loc[len(df_B)] = ['JUMLAH BESAR', round(total_pct, 1)] # Should be near 100
+                    df_B.loc[len(df_B)] = ['JUMLAH BESAR', df_B['Peratus (%)'].sum().round(1)]
                     
                     text = generate_analysis_text(col, counts, percents)
                     
-                    # Write to Word
+                    # Write to Doc
                     doc.add_heading(f"Analisis: {col}", level=2)
                     
-                    # Table A
                     doc.add_paragraph("Jadual (a): Taburan Kekerapan", style='Caption')
                     t1 = doc.add_table(df_A.shape[0]+1, df_A.shape[1])
                     t1.style = 'Table Grid'
-                    # Header
                     for j, col_name in enumerate(df_A.columns):
                         t1.cell(0, j).text = col_name
-                    # Rows
                     for i, row in enumerate(df_A.itertuples(index=False)):
                         for j, val in enumerate(row):
                             t1.cell(i+1, j).text = str(val)
-                    doc.add_paragraph() # Spacing
+                    doc.add_paragraph() 
 
-                    # Table B
                     doc.add_paragraph("Jadual (b): Taburan Peratusan", style='Caption')
                     t2 = doc.add_table(df_B.shape[0]+1, df_B.shape[1])
                     t2.style = 'Table Grid'
-                    # Header
                     for j, col_name in enumerate(df_B.columns):
                         t2.cell(0, j).text = col_name
-                    # Rows
                     for i, row in enumerate(df_B.itertuples(index=False)):
                         for j, val in enumerate(row):
                             t2.cell(i+1, j).text = str(val)
                     doc.add_paragraph()
                     
-                    # Analysis Text
                     p = doc.add_paragraph(text.replace('**', ''))
                     p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+
+            elif item['type'] == 'cross':
+                var_x, var_y = item['var_x'], item['var_y']
+                if var_x in df.columns and var_y in df.columns:
+                    doc.add_heading(f"Analisis Silang: {var_x} vs {var_y}", level=2)
                     
+                    ct = pd.crosstab(df[var_x], df[var_y])
+                    doc.add_paragraph("Jadual Silang (Crosstabulation)", style='Caption')
+                    
+                    # Create Table for Cross Tab
+                    t3 = doc.add_table(ct.shape[0]+1, ct.shape[1]+1)
+                    t3.style = 'Table Grid'
+                    
+                    # Headers
+                    t3.cell(0, 0).text = var_x
+                    for j, col_val in enumerate(ct.columns):
+                        t3.cell(0, j+1).text = str(col_val)
+                    
+                    # Rows
+                    for i, (idx_val, row) in enumerate(ct.iterrows()):
+                        t3.cell(i+1, 0).text = str(idx_val)
+                        for j, val in enumerate(row):
+                            t3.cell(i+1, j+1).text = str(val)
+                    
+                    doc.add_paragraph(f"Analisis ini menunjukkan taburan silang antara {var_x} dan {var_y}.")
+                    doc.add_paragraph()
+
     return doc
 
-# --- SIDEBAR & NAVIGATION ---
-st.sidebar.title("Menu Sistem")
-menu = st.sidebar.radio("Pilih Modul:", 
-    ["1. Upload / Paste Data", "2. Dashboard Ringkas", "3. Report Generator", "4. Advanced Report Builder"])
+# --- SIDEBAR MENU (MENGGANTIKAN Sidebar.tsx) ---
+st.sidebar.title("📊 Sistem Analisis KIAS")
+menu = st.sidebar.radio("Navigasi Modul:", 
+    ["1. Data Manager", "2. Dashboard", "3. Statistical Analysis", "4. Cross Analysis", "5. Report Generator", "6. Advanced Report Builder"])
 
-# --- MODUL 1: UPLOAD DATA ---
-if menu == "1. Upload / Paste Data":
+# --- MODUL 1: DATA MANAGER (DataManager.tsx) ---
+if menu == "1. Data Manager":
     st.title("📂 Pengurusan Data")
+    st.write("Muat naik fail Excel/CSV atau Paste data anda di sini.")
     
-    tab1, tab2 = st.tabs(["Upload Fail (Excel/CSV)", "Paste Data (Grid Mode)"])
+    tab1, tab2 = st.tabs(["📤 Upload Fail", "📋 Paste (Grid View)"])
     
     with tab1:
-        uploaded_file = st.file_uploader("Muat Naik Fail", type=['csv', 'xlsx'])
+        uploaded_file = st.file_uploader("Pilih fail (.xlsx / .csv)", type=['csv', 'xlsx'])
         if uploaded_file:
             try:
                 if uploaded_file.name.endswith('.csv'):
-                    # Baca header dahulu
                     df_temp = pd.read_csv(uploaded_file, header=None)
                     header_row = detect_header_row(df_temp)
-                    # Baca semula dengan header yang betul
                     uploaded_file.seek(0)
                     df = pd.read_csv(uploaded_file, header=header_row)
                 else:
@@ -213,16 +204,13 @@ if menu == "1. Upload / Paste Data":
                 
                 df = clean_data(df)
                 st.session_state['df'] = df
-                st.success(f"✅ Data berjaya dimuat naik! Jumlah Responden: {len(df)}")
+                st.success(f"✅ Fail berjaya dimuat naik! ({len(df)} Responden)")
                 st.dataframe(df.head())
             except Exception as e:
-                st.error(f"Ralat membaca fail: {e}")
+                st.error(f"Ralat: {e}")
 
     with tab2:
-        st.write("### Manual Entry (Grid Style)")
-        st.info("💡 Klik pada sel pertama (Var1), kemudian tekan **Ctrl+V** untuk paste data dari Excel.")
-        
-        # Sediakan Grid Kosong Besar
+        st.info("Klik pada sel pertama (Var1), kemudian tekan **Ctrl+V** untuk paste dari Excel.")
         if 'grid_df' not in st.session_state:
             cols = [f"Var{i+1}" for i in range(50)]
             st.session_state['grid_df'] = pd.DataFrame(columns=cols, index=range(100)).fillna("")
@@ -230,78 +218,113 @@ if menu == "1. Upload / Paste Data":
         edited_df = st.data_editor(st.session_state['grid_df'], num_rows="dynamic", use_container_width=True)
         
         if st.button("✅ Proses Data Paste"):
-            # Cari baris pertama yang berisi sebagai header
             try:
-                # Bersihkan row/col kosong dulu
                 clean_edit = edited_df.replace("", pd.NA).dropna(how='all', axis=0).dropna(how='all', axis=1)
-                
-                # Angkat row pertama jadi header
                 new_header = clean_edit.iloc[0]
                 df_final = clean_edit[1:]
                 df_final.columns = new_header
                 df_final.reset_index(drop=True, inplace=True)
-                
                 st.session_state['df'] = df_final
-                st.success(f"✅ Data Paste Berjaya! Jumlah: {len(df_final)}")
+                st.success(f"✅ Data Paste Berjaya! ({len(df_final)} Responden)")
                 st.rerun()
             except Exception as e:
-                st.error(f"Ralat memproses data: {e}")
+                st.error(f"Ralat: {e}")
 
-# --- MODUL 2: DASHBOARD ---
-elif menu == "2. Dashboard Ringkas":
-    st.title("📊 Dashboard Analisis")
+# --- MODUL 2: DASHBOARD (Dashboard.tsx) ---
+elif menu == "2. Dashboard":
+    st.title("📈 Dashboard Ringkas")
     df = st.session_state['df']
     
     if df is None:
-        st.warning("⚠️ Sila upload data dahulu di menu 1.")
+        st.warning("⚠️ Sila upload data dahulu di Menu 1.")
     else:
         col_list = df.columns.tolist()
-        selected_col = st.selectbox("Pilih Pemboleh Ubah untuk Dianalisis:", col_list)
+        selected_col = st.selectbox("Pilih Pemboleh Ubah Utama:", col_list)
         
-        if selected_col:
+        c1, c2 = st.columns(2)
+        with c1:
             counts = df[selected_col].value_counts()
             fig = px.bar(counts, x=counts.index, y=counts.values, 
-                         labels={'x': selected_col, 'y': 'Kekerapan'},
-                         title=f"Taburan: {selected_col}",
-                         text_auto=True, color_discrete_sequence=['#3366cc'])
+                         labels={'x': selected_col, 'y': 'Kekerapan'}, 
+                         title=f"Carta Bar: {selected_col}", color_discrete_sequence=['#3366cc'])
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with c2:
+            fig2 = px.pie(counts, values=counts.values, names=counts.index, 
+                          title=f"Carta Pai: {selected_col}")
+            st.plotly_chart(fig2, use_container_width=True)
+
+# --- MODUL 3: STATISTICAL ANALYSIS (StatisticalAnalysis.tsx) ---
+elif menu == "3. Statistical Analysis":
+    st.title("🧮 Analisis Statistik Terperinci")
+    df = st.session_state['df']
+    
+    if df is None:
+        st.warning("⚠️ Sila upload data dahulu.")
+    else:
+        col_list = df.columns.tolist()
+        target_col = st.selectbox("Pilih Soalan / Variabel:", col_list)
+        
+        if target_col:
+            stats = df[target_col].describe().astype(str)
+            counts = df[target_col].value_counts()
+            percents = df[target_col].value_counts(normalize=True) * 100
+            
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                st.write("**Statistik Deskriptif:**")
+                st.dataframe(stats, use_container_width=True)
+            
+            with c2:
+                st.write("**Jadual Taburan:**")
+                summary_df = pd.DataFrame({'Kategori': counts.index, 'Bilangan': counts.values, 'Peratus (%)': percents.values.round(1)})
+                st.dataframe(summary_df, use_container_width=True)
+
+# --- MODUL 4: CROSS ANALYSIS (CrossAnalysis.tsx) ---
+elif menu == "4. Cross Analysis":
+    st.title("❌ Analisis Silang (Crosstab)")
+    df = st.session_state['df']
+    
+    if df is None:
+        st.warning("⚠️ Sila upload data dahulu.")
+    else:
+        col_list = df.columns.tolist()
+        c1, c2 = st.columns(2)
+        with c1: x_var = st.selectbox("Paksi X (Faktor):", col_list, index=0)
+        with c2: y_var = st.selectbox("Paksi Y (Hasil):", col_list, index=min(1, len(col_list)-1))
+        
+        if x_var and y_var:
+            ct = pd.crosstab(df[x_var], df[y_var])
+            
+            st.subheader("Peta Haba (Heatmap)")
+            fig = px.imshow(ct, text_auto=True, aspect="auto", color_continuous_scale="Blues", title=f"Hubungan {x_var} vs {y_var}")
             st.plotly_chart(fig, use_container_width=True)
             
-            # Cross Analysis Mini
-            st.subheader("Analisis Silang (Cross-Tab)")
-            c1, c2 = st.columns(2)
-            with c1: x_var = st.selectbox("Paksi X", col_list, index=0)
-            with c2: y_var = st.selectbox("Paksi Y", col_list, index=min(1, len(col_list)-1))
-            
-            if x_var and y_var:
-                ct = pd.crosstab(df[x_var], df[y_var])
-                fig2 = px.imshow(ct, text_auto=True, aspect="auto", color_continuous_scale="Blues")
-                st.plotly_chart(fig2, use_container_width=True)
+            st.subheader("Jadual Data")
+            st.dataframe(ct)
 
-# --- MODUL 3: REPORT GENERATOR (BASIC) ---
-elif menu == "3. Report Generator":
-    st.title("📑 Report Generator (Auto)")
+# --- MODUL 5: REPORT GENERATOR (ReportGenerator.tsx) ---
+elif menu == "5. Report Generator":
+    st.title("📑 Auto Report Generator")
     df = st.session_state['df']
     
     if df is None:
         st.warning("⚠️ Tiada data.")
     else:
-        st.info("Modul ini akan menjana laporan untuk SEMUA pemboleh ubah secara automatik.")
-        cols_to_analyze = [c for c in df.columns if c.lower() not in ['timestamp', 'email address', 'id']]
+        st.info("Laporan ini dijana secara automatik untuk SEMUA pemboleh ubah.")
+        cols_to_analyze = [c for c in df.columns if c.lower() not in ['timestamp', 'id', 'email']]
         
         st.markdown('<div class="report-view-text">', unsafe_allow_html=True)
         st.header("LAPORAN ANALISIS PENUH")
         
         for col in cols_to_analyze:
             st.subheader(f"Analisis: {col}")
-            
             counts = df[col].value_counts()
             percents = df[col].value_counts(normalize=True) * 100
             
-            # Table A
             df_A = pd.DataFrame({'Kategori': counts.index, 'Bilangan': counts.values})
             df_A.loc[len(df_A)] = ['JUMLAH BESAR', df_A['Bilangan'].sum()]
             
-            # Table B
             df_B = pd.DataFrame({'Kategori': percents.index, 'Peratus (%)': percents.values.round(1)})
             df_B.loc[len(df_B)] = ['JUMLAH BESAR', df_B['Peratus (%)'].sum().round(1)]
 
@@ -316,55 +339,47 @@ elif menu == "3. Report Generator":
             text = generate_analysis_text(col, counts, percents)
             st.markdown(f"<p style='text-align: justify;'>{text}</p>", unsafe_allow_html=True)
             st.markdown("---")
-            
         st.markdown('</div>', unsafe_allow_html=True)
 
-# --- MODUL 4: ADVANCED REPORT BUILDER ---
-elif menu == "4. Advanced Report Builder":
-    st.title("📝 Advanced Report Builder")
+# --- MODUL 6: ADVANCED REPORT (AdvancedReportGenerator.tsx) ---
+elif menu == "6. Advanced Report Builder":
+    st.title("📝 Advanced Report Builder (Bab demi Bab)")
     df = st.session_state['df']
     
     if df is None:
         st.warning("⚠️ Sila upload data dahulu.")
     else:
-        # --- SIDEBAR CONFIG ---
-        st.sidebar.markdown("---")
-        st.sidebar.subheader("🔧 Konfigurasi Laporan")
-        
-        if st.sidebar.button("➕ Tambah Bab Baru"):
-            new_chap_num = len(st.session_state['report_structure']) + 1
-            st.session_state['report_structure'].append(
-                {"title": f"Bab {new_chap_num}: (Klik untuk Edit Tajuk)", "items": []}
-            )
-            st.rerun()
+        # Konfigurasi Bab
+        with st.sidebar:
+            st.divider()
+            if st.button("➕ Tambah Bab Baru"):
+                new_num = len(st.session_state['report_structure']) + 1
+                st.session_state['report_structure'].append({"title": f"Bab {new_num}: (Klik untuk Edit)", "items": []})
+                st.rerun()
+            if st.button("🗑️ Reset Semua Bab"):
+                st.session_state['report_structure'] = [{"title": "Bab 1: Pendahuluan", "items": []}]
+                st.rerun()
 
-        if st.sidebar.button("🗑️ Reset Laporan (Kosongkan)"):
-             st.session_state['report_structure'] = [{"title": "Bab 1: Pendahuluan", "items": []}]
-             st.rerun()
-
-        # --- MAIN BUILDER UI ---
+        # Builder UI
         for i, chapter in enumerate(st.session_state['report_structure']):
             with st.expander(f"{chapter['title']}", expanded=True):
-                # Edit Title
                 new_title = st.text_input(f"Tajuk Bab {i+1}", value=chapter['title'], key=f"title_{i}")
                 st.session_state['report_structure'][i]['title'] = new_title
                 
-                # Show Items
+                # List Items
                 if chapter['items']:
-                    st.write("##### Senarai Analisis dalam Bab ini:")
                     for j, item in enumerate(chapter['items']):
                         if item['type'] == 'single':
                             st.text(f"{j+1}. Single Variable: {item['var']}")
                         else:
                             st.text(f"{j+1}. Cross Analysis: {item['var_x']} VS {item['var_y']}")
                 else:
-                    st.info("Belum ada item. Sila tambah di bawah.")
+                    st.caption("Tiada item lagi.")
 
+                # Add Item UI
                 st.markdown("---")
-                # Add Item Form
                 c1, c2, c3 = st.columns([1, 2, 1])
-                with c1:
-                    type_choice = st.selectbox("Jenis Analisis", ["Single Variable", "Cross Analysis"], key=f"type_{i}")
+                with c1: type_choice = st.selectbox("Jenis Analisis", ["Single Variable", "Cross Analysis"], key=f"type_{i}")
                 with c2:
                     col_opts = df.columns.tolist()
                     if type_choice == "Single Variable":
@@ -373,30 +388,25 @@ elif menu == "4. Advanced Report Builder":
                         var_x = st.selectbox("Paksi X", col_opts, key=f"vx_{i}")
                         var_y = st.selectbox("Paksi Y", col_opts, key=f"vy_{i}")
                 with c3:
-                    st.write("") # Spacer
+                    st.write("")
                     st.write("")
                     if st.button("➕ Tambah Item", key=f"add_{i}"):
-                        if type_choice == "Single Variable":
-                            chapter['items'].append({"type": "single", "var": var_sel})
-                        else:
-                            chapter['items'].append({"type": "cross", "var_x": var_x, "var_y": var_y})
+                        item = {"type": "single", "var": var_sel} if type_choice == "Single Variable" else {"type": "cross", "var_x": var_x, "var_y": var_y}
+                        chapter['items'].append(item)
                         st.rerun()
 
-        # --- PREVIEW & EXPORT ---
-        st.markdown("## Pratsonton & Muat Turun")
-        
-        if st.button("🔄 Generate Full Report Preview"):
+        # Export Section
+        st.divider()
+        st.subheader("Muat Turun Laporan")
+        if st.button("📄 Generate Report Preview"):
             st.markdown('<div class="report-view-text">', unsafe_allow_html=True)
-            st.header("DRAF LAPORAN AKHIR")
-            
             for chapter in st.session_state['report_structure']:
-                st.markdown(f"## {chapter['title']}")
-                
+                st.header(chapter['title'])
                 for item in chapter['items']:
                     if item['type'] == 'single':
                         col = item['var']
                         if col in df.columns:
-                            st.markdown(f"### Analisis: {col}")
+                            st.subheader(f"Analisis: {col}")
                             counts = df[col].value_counts()
                             percents = df[col].value_counts(normalize=True) * 100
                             
@@ -411,25 +421,17 @@ elif menu == "4. Advanced Report Builder":
                             with c2: st.table(df_B)
                             
                             text = generate_analysis_text(col, counts, percents)
-                            st.markdown(f"*{text}*")
-                            
-                    elif item['type'] == 'cross':
-                        # Logic ringkas untuk Cross Analysis preview
-                        st.markdown(f"### Analisis Silang: {item['var_x']} vs {item['var_y']}")
-                        ct = pd.crosstab(df[item['var_x']], df[item['var_y']])
-                        st.table(ct)
-            
+                            st.write(text)
             st.markdown('</div>', unsafe_allow_html=True)
-            
-            # Export Buttons
-            # Word
-            doc = generate_word_doc(st.session_state['report_structure'], df)
-            bio = io.BytesIO()
-            doc.save(bio)
-            
-            st.download_button(
-                label="📝 Muat Turun Laporan (Word .docx)",
-                data=bio.getvalue(),
-                file_name="Laporan_Analisis_KIAS.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            )
+
+        # Word Download Button
+        doc = generate_word_doc(st.session_state['report_structure'], df)
+        bio = io.BytesIO()
+        doc.save(bio)
+        
+        st.download_button(
+            label="📝 Muat Turun Laporan (.docx)",
+            data=bio.getvalue(),
+            file_name="Laporan_Analisis_KIAS.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
