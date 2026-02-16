@@ -1,12 +1,6 @@
 streamlit
 pandas
 plotly
-scipy
-statsmodels
-pingouin
-qrcode
-pillow
 fpdf
+python-docx
 openpyxl
-xlsxwriter
-st-gsheets-connection
